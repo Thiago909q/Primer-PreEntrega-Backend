@@ -1,46 +1,79 @@
 import { Router } from 'express';
+import fs from 'fs/promises';
+import path from 'path';
 
 const viewsRoutes = Router();
-let products = []; // Lista de productos en memoria
 
-// Ruta para renderizar la vista "home"
-viewsRoutes.get('/', (req, res) => {
-    res.render('home', {
-        title: 'Listado de Productos',
-        products, // Pasar los productos a la vista
-    });
-});
+// Ruta al archivo de productos
+const productsFilePath = path.resolve('src/data/products.json');
 
-// Endpoint para agregar productos
-viewsRoutes.post('/add-product', (req, res) => {
-    const product = req.body;
-
-    // Validar que todos los campos estén presentes
-    if (
-        !product.title ||
-        !product.description ||
-        !product.code ||
-        !product.price ||
-        !product.stock ||
-        !product.category
-    ) {
-        return res.status(400).send({
-            status: 'error',
-            message: 'Todos los campos son obligatorios',
-        });
+// Funciones de ayuda
+const getProducts = async () => {
+    try {
+        const data = await fs.readFile(productsFilePath, 'utf-8');
+        return JSON.parse(data);
+    } catch {
+    return [];
     }
+};
 
-    // Asignar un ID único al producto
-    product.id = products.length > 0 ? products[products.length - 1].id + 1 : 1;
+const saveProducts = async (products) => {
+    await fs.writeFile(productsFilePath, JSON.stringify(products, null, 2), 'utf-8');
+};
 
-    // Agregar el producto a la lista
-    products.push(product);
-
-    res.send({
-        status: 'ok',
-        message: 'Producto agregado exitosamente',
-        product,
-    });
+// Ruta para "home.handlebars"
+viewsRoutes.get('/home', async (req, res) => {
+    const products = await getProducts();
+    res.render('home', { products });
 });
+
+// Ruta para "realTimeProducts.handlebars"
+viewsRoutes.get('/realtimeproducts', async (req, res) => {
+    const products = await getProducts();
+    res.render('realTimeProducts', { products });
+});
+
+// API para WebSocket
+viewsRoutes.post('/api/realtimeproducts', async (req, res) => {
+    const io = req.app.get('io');
+    const newProduct = req.body;
+
+  // Validaciones
+    if (!newProduct.title || !newProduct.price || !newProduct.stock || !newProduct.category || !newProduct.description) {
+        return res.status(400).send({ status: 'error', message: 'Campos incompletos' });
+}
+
+  // Guardar producto
+const products = await getProducts();
+newProduct.id = Math.floor(Math.random() * 10000);
+products.push(newProduct);
+await saveProducts(products);
+
+  // Emitir evento de actualización
+io.emit('product-added', products);
+
+res.status(201).send({ status: 'ok', message: 'Producto agregado' });
+});
+
+viewsRoutes.delete('/api/realtimeproducts/:id', async (req, res) => {
+const io = req.app.get('io');
+const id = +req.params.id;
+
+  // Eliminar producto
+const products = await getProducts();
+const filteredProducts = products.filter((p) => p.id !== id);
+
+if (products.length === filteredProducts.length) {
+    return res.status(404).send({ status: 'error', message: 'Producto no encontrado' });
+}
+
+await saveProducts(filteredProducts);
+
+  // Emitir evento de actualización
+io.emit('product-deleted', filteredProducts);
+
+  res.status(200).send({ status: 'ok', message: 'Producto eliminado' });
+});
+
 
 export default viewsRoutes;

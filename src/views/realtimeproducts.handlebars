@@ -1,3 +1,66 @@
-<div>
-    <h1>Realtimeproducts</h1>
-</div>
+<h1>Productos en Tiempo Real</h1>
+<ul id="product-list">
+  {{#each products}}
+  <li id="product-{{this.id}}">
+    <strong>{{this.title}}</strong> - ${{this.price}} (Stock: {{this.stock}})
+    <button onclick="deleteProduct({{this.id}})">Eliminar</button>
+  </li>
+  {{/each}}
+</ul>
+
+<form id="product-form">
+  <input type="text" name="title" placeholder="Título" required />
+  <input type="number" name="price" placeholder="Precio" required />
+  <input type="number" name="stock" placeholder="Stock" required />
+  <input type="text" name="category" placeholder="Categoría" required />
+  <input type="text" name="description" placeholder="Descripción" required />
+  <button type="submit">Agregar Producto</button>
+</form>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const socket = io();
+  const productList = document.getElementById('product-list');
+  const productForm = document.getElementById('product-form');
+
+  socket.on('product-added', (products) => {
+    productList.innerHTML = products
+      .map(
+        (p) =>
+          `<li id="product-${p.id}">
+            <strong>${p.title}</strong> - $${p.price} (Stock: ${p.stock})
+            <button onclick="deleteProduct(${p.id})">Eliminar</button>
+          </li>`
+      )
+      .join('');
+  });
+
+  socket.on('product-deleted', (products) => {
+    productList.innerHTML = products
+      .map(
+        (p) =>
+          `<li id="product-${p.id}">
+            <strong>${p.title}</strong> - $${p.price} (Stock: ${p.stock})
+            <button onclick="deleteProduct(${p.id})">Eliminar</button>
+          </li>`
+      )
+      .join('');
+  });
+
+  productForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(productForm);
+    const product = Object.fromEntries(formData);
+
+    const response = await fetch('/api/realtimeproducts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(product),
+    });
+    if (response.ok) productForm.reset();
+  });
+
+  async function deleteProduct(id) {
+    await fetch(`/api/realtimeproducts/${id}`, { method: 'DELETE' });
+  }
+</script>
